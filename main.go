@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"gocash/pkg/arrs"
 	"gocash/pkg/db"
 	"gocash/pkg/logger"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -195,7 +198,7 @@ func main() {
 	})
 
 	// TODO: need fix
-	r.GET("/cashes", func(ctx *gin.Context) {
+	r.GET("/reports", func(ctx *gin.Context) {
 		var cashBody CashBodyResponse
 		var cashBodies []CashBodyResponse
 		sqlStatement := `
@@ -238,6 +241,101 @@ func main() {
 		ctx.JSON(200, gin.H{
 			"message": "Successfully get cashes",
 			"ranges":  cashBodies,
+		})
+	})
+
+	// /cashes
+	// Filters: amount, detail, note, client, contact as array
+	// Pagination: offset, limit with defaults respectively 0, 50
+	r.GET("/cashes", func(ctx *gin.Context) {
+		offsetQuery := ctx.DefaultQuery("offset", "0")
+		limitQuery := ctx.DefaultQuery("limit", "50")
+		offset, err := strconv.Atoi(offsetQuery)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{
+				"error":   err.Error(),
+				"message": "offset value must be convertable to integer",
+			})
+			return
+		}
+		limit, err := strconv.Atoi(limitQuery)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{
+				"error":   err.Error(),
+				"message": "limit value must be convertable to integer",
+			})
+			return
+		}
+
+		urlQueries := ctx.Request.URL.Query()
+		index := 0
+		var values []interface{}
+		var queries []string
+		for k, v := range urlQueries {
+			if arrs.Contains([]string{"uuid", "client", "contact", "amount", "detail", "note"}, k) {
+				str := ""
+				for _, v := range v {
+					str += v + "|"
+				}
+				str = strings.TrimSuffix(str, "|")
+				str += ""
+				values = append(values, str)
+				index++
+
+				queries = append(queries, fmt.Sprintf("%s ~* $", k)+strconv.Itoa(index))
+			}
+		}
+		valuesWithPagination := append(values, offset, limit)
+
+		sqlStatement := `SELECT c.amount, c.contact, c.client, c.detail, c.note, c.created_at FROM cashes c`
+		sqlFilters := ""
+		if len(queries) > 0 {
+			sqlFilters += " WHERE "
+			sqlFilters += strings.Join(queries, " AND ")
+		}
+		sqlStatement += sqlFilters
+		sqlStatement += " ORDER BY created_at DESC "
+		sqlStatement += fmt.Sprintf(" offset $%v limit $%v", index+1, index+2)
+		rows, err := db.Query(context.Background(), sqlStatement, valuesWithPagination...)
+		if err != nil {
+			logger.Error(err)
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error":   err.Error(),
+				"message": "Couldn't search from cashes",
+			})
+			return
+		}
+		defer rows.Close()
+
+		cashes := make([]CashBodyResponse, 0)
+		for rows.Next() {
+			var cash CashBodyResponse
+			err := rows.Scan(&cash.Amount, &cash.Contact, &cash.Client, &cash.Detail, &cash.Note, &cash.CreatedAt)
+			if err != nil {
+				logger.Errorf("Scan error %v", err)
+				ctx.JSON(http.StatusInternalServerError, gin.H{
+					"error":   err,
+					"message": "Scan error",
+				})
+				return
+			}
+			cashes = append(cashes, cash)
+		}
+
+		totalCashes := 0
+		err = db.QueryRow(context.Background(), "SELECT COUNT(*) FROM cashes"+sqlFilters, values...).Scan(&totalCashes)
+		if err != nil {
+			logger.Errorf("cash count error %v", err)
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error":   err.Error(),
+				"message": "Couldn't count total number of transactions",
+			})
+			return
+		}
+
+		ctx.JSON(http.StatusOK, gin.H{
+			"cashes": cashes,
+			"total":  totalCashes,
 		})
 	})
 
