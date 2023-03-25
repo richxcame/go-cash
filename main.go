@@ -7,13 +7,16 @@ import (
 	"gocash/pkg/db"
 	"gocash/pkg/logger"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
 	_ "github.com/joho/godotenv/autoload"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type CashBody struct {
@@ -44,6 +47,12 @@ type CashBodyResponse struct {
 	Client    string    `json:"client"`
 	Contact   string    `json:"contact"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+var JWT_SECRET []byte
+
+func init() {
+	JWT_SECRET = []byte(os.Getenv("JWT_SECRET"))
 }
 
 func main() {
@@ -339,5 +348,227 @@ func main() {
 		})
 	})
 
+	r.POST("/login", func(ctx *gin.Context) {
+		var user User
+		if err := ctx.BindJSON(&user); err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{
+				"error":   err.Error(),
+				"message": "Couln't parse the request to user",
+			})
+			return
+		}
+
+		var dUser User
+		err := db.QueryRow(context.Background(), "select * from users where username = $1", user.Username).Scan(&dUser.Username, &dUser.Password)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{
+				"error":   err.Error(),
+				"message": "Couldn't find user",
+			})
+			return
+		}
+
+		if err := bcrypt.CompareHashAndPassword([]byte(dUser.Password), []byte(user.Password)); err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{
+				"error":   "wrong_password",
+				"message": "Invalid password",
+			})
+			return
+		}
+
+		tokens, err := GenerateJWT(user.Username)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error":   err.Error(),
+				"message": "Coulnd't create token",
+			})
+			return
+		}
+
+		ctx.JSON(http.StatusOK, gin.H{
+			"access_token":  tokens.AccessToken,
+			"refresh_token": tokens.RefreshToken,
+		})
+	})
+
+	r.POST("/token", func(c *gin.Context) {
+		claims := &Claims{}
+		token := Tokens{}
+		if err := c.BindJSON(&token); err != nil {
+			logger.Errorf("couldn't bind token body %v", err)
+			c.JSON(http.StatusBadRequest, err.Error())
+			return
+		}
+		tkn, err := jwt.ParseWithClaims(token.RefreshToken, claims, func(t *jwt.Token) (interface{}, error) {
+			return JWT_SECRET, nil
+		})
+		if err != nil {
+			logger.Errorf("couldn't parse token %v", err)
+			c.AbortWithStatusJSON(http.StatusBadRequest, "Cannot parse token")
+			return
+		}
+
+		if claims.ExpiresAt.Unix() < time.Now().Local().Unix() {
+			logger.Errorf("refresh_token is expired")
+			c.AbortWithStatusJSON(http.StatusForbidden, "Token expired")
+			return
+		}
+
+		if !tkn.Valid {
+			logger.Errorf("invalid token")
+			c.AbortWithStatusJSON(http.StatusBadRequest, "Invalid token")
+			return
+		}
+
+		tokens, err := RefreshToken(claims)
+		if err != nil {
+			c.JSON(http.StatusForbidden, err.Error())
+			return
+		}
+
+		tokens.RefreshToken = token.RefreshToken
+		c.JSON(http.StatusOK, tokens)
+	})
+
 	r.Run()
+}
+
+type Tokens struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+}
+
+type User struct {
+	Username  string    `json:"username"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Password  string    `json:"password"`
+}
+
+type Claims struct {
+	User User `json:"user"`
+	jwt.RegisteredClaims
+}
+
+// Authentication middleware
+func Auth() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		claims := &Claims{}
+		var token string
+
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"error":   "token_required",
+				"message": "Auth token is required",
+			})
+			return
+		}
+		splitToken := strings.Split(authHeader, "Bearer ")
+		if len(splitToken) > 1 {
+			token = splitToken[1]
+		} else {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+				"error":   "token_wrong",
+				"message": "Invalid token",
+			})
+			return
+		}
+		tkn, err := jwt.ParseWithClaims(token, claims, func(t *jwt.Token) (interface{}, error) {
+			return JWT_SECRET, nil
+		})
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+				"error":   err.Error(),
+				"message": "Couldn't parse token",
+			})
+			return
+		}
+
+		if claims.ExpiresAt.Unix() < time.Now().Local().Unix() {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"error":   "token_expired",
+				"message": "Token expired",
+			})
+			return
+		}
+
+		if !tkn.Valid {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+				"error":   "invalid_token",
+				"message": "Invalid token",
+			})
+			return
+		}
+		c.Next()
+	}
+}
+
+// GenerateJWT creates access and refresh tokens with user's username
+func GenerateJWT(username string) (token Tokens, err error) {
+	// Create access token
+	accessTokenExp := time.Now().Add(3 * time.Hour)
+	accessClaims := &Claims{
+		User: User{
+			Username: username,
+		},
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: &jwt.NumericDate{Time: accessTokenExp},
+		},
+	}
+	accessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)
+	token.AccessToken, err = accessToken.SignedString(JWT_SECRET)
+	if err != nil {
+		return Tokens{}, err
+	}
+
+	// Create refresh token
+	refreshTokenExp := time.Now().Add(24 * time.Hour * 30)
+	refreshClaims := &Claims{
+		User: User{
+			Username: username,
+		},
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: &jwt.NumericDate{Time: refreshTokenExp},
+		},
+	}
+	refreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
+	token.RefreshToken, err = refreshToken.SignedString(JWT_SECRET)
+	if err != nil {
+		return Tokens{}, err
+	}
+
+	return token, nil
+}
+
+func RefreshToken(claims *Claims) (token Tokens, err error) {
+	accessTokenTimeOut, err := strconv.Atoi(os.Getenv("ACCESS_TOKEN_TIMEOUT"))
+	if err != nil {
+		return Tokens{}, err
+	}
+	expirationTime := time.Now().Add(time.Duration(accessTokenTimeOut) * time.Second)
+
+	claims.ExpiresAt = &jwt.NumericDate{Time: expirationTime}
+	accessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	token.AccessToken, err = accessToken.SignedString(JWT_SECRET)
+	if err != nil {
+		return Tokens{}, err
+	}
+
+	refreshTokenTimeOut, err := strconv.Atoi(os.Getenv("REFRESH_TOKEN_TIMEOUT"))
+	if err != nil {
+		return Tokens{}, err
+	}
+	expirationTime = time.Now().Add(time.Duration(refreshTokenTimeOut) * time.Second)
+
+	claims.ExpiresAt = &jwt.NumericDate{Time: expirationTime}
+
+	refreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+
+	token.RefreshToken, err = refreshToken.SignedString(JWT_SECRET)
+	if err != nil {
+		return Tokens{}, err
+	}
+
+	return token, nil
 }
