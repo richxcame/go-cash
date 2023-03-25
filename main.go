@@ -5,6 +5,7 @@ import (
 	"gocash/pkg/db"
 	"gocash/pkg/logger"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -142,11 +143,30 @@ func main() {
 			"uuid":    _uuid,
 		})
 	})
+
 	r.GET("/ranges", func(ctx *gin.Context) {
-		var rangeBody RangeBodyResponse
+		offsetQuery := ctx.DefaultQuery("offset", "0")
+		limitQuery := ctx.DefaultQuery("limit", "20")
+		offset, err := strconv.Atoi(offsetQuery)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{
+				"error":   err.Error(),
+				"message": "offset value must be convertable to integer",
+			})
+			return
+		}
+		limit, err := strconv.Atoi(limitQuery)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{
+				"error":   err.Error(),
+				"message": "limit value must be convertable to integer",
+			})
+			return
+		}
+
 		var rangeBodies []RangeBodyResponse
-		sqlStatement := `SELECT r.detail, r.note, r.client, r.created_at, r.updated_at FROM ranges r ORDER BY r.created_at DESC LIMIT $1 OFFSET $2;`
-		rows, err := db.Query(context.Background(), sqlStatement, 10, 0)
+		sqlStatement := `SELECT r.detail, r.note, r.client, r.created_at, r.updated_at FROM ranges r ORDER BY r.created_at DESC OFFSET $1 LIMIT $2;`
+		rows, err := db.Query(context.Background(), sqlStatement, offset, limit)
 		if err != nil {
 			logger.Errorf("ranges search error %v", err)
 			ctx.JSON(http.StatusInternalServerError, gin.H{
@@ -156,6 +176,7 @@ func main() {
 			return
 		}
 		for rows.Next() {
+			var rangeBody RangeBodyResponse
 			err := rows.Scan(&rangeBody.Detail, &rangeBody.Note, &rangeBody.Client, &rangeBody.CreatedAt)
 			if err != nil {
 				logger.Errorf("Scan error %v", err)
@@ -173,6 +194,7 @@ func main() {
 		})
 	})
 
+	// TODO: need fix
 	r.GET("/cashes", func(ctx *gin.Context) {
 		var cashBody CashBodyResponse
 		var cashBodies []CashBodyResponse
