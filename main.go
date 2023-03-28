@@ -256,7 +256,7 @@ func main() {
 	// /cashes
 	// Filters: amount, detail, note, client, contact as array
 	// Pagination: offset, limit with defaults respectively 0, 50
-	r.GET("/cashes", func(ctx *gin.Context) {
+	r.GET("/cashes", Auth(), func(ctx *gin.Context) {
 		offsetQuery := ctx.DefaultQuery("offset", "0")
 		limitQuery := ctx.DefaultQuery("limit", "50")
 		offset, err := strconv.Atoi(offsetQuery)
@@ -349,8 +349,10 @@ func main() {
 	})
 
 	r.POST("/login", func(ctx *gin.Context) {
+		// Get body from the request
 		var user User
 		if err := ctx.BindJSON(&user); err != nil {
+			logger.Error(err)
 			ctx.JSON(http.StatusBadRequest, gin.H{
 				"error":   err.Error(),
 				"message": "Couln't parse the request to user",
@@ -358,9 +360,11 @@ func main() {
 			return
 		}
 
+		// Find the user with given data from database
 		var dUser User
-		err := db.QueryRow(context.Background(), "select * from users where username = $1", user.Username).Scan(&dUser.Username, &dUser.Password)
+		err := db.QueryRow(context.Background(), "select username, password from users where username = $1", user.Username).Scan(&dUser.Username, &dUser.Password)
 		if err != nil {
+			logger.Error(err)
 			ctx.JSON(http.StatusBadRequest, gin.H{
 				"error":   err.Error(),
 				"message": "Couldn't find user",
@@ -368,7 +372,9 @@ func main() {
 			return
 		}
 
+		// Compare passwords
 		if err := bcrypt.CompareHashAndPassword([]byte(dUser.Password), []byte(user.Password)); err != nil {
+			logger.Error(err)
 			ctx.JSON(http.StatusBadRequest, gin.H{
 				"error":   "wrong_password",
 				"message": "Invalid password",
@@ -376,8 +382,10 @@ func main() {
 			return
 		}
 
+		// Generate new token
 		tokens, err := GenerateJWT(user.Username)
 		if err != nil {
+			logger.Error(err)
 			ctx.JSON(http.StatusInternalServerError, gin.H{
 				"error":   err.Error(),
 				"message": "Coulnd't create token",
@@ -385,6 +393,7 @@ func main() {
 			return
 		}
 
+		// Send success response
 		ctx.JSON(http.StatusOK, gin.H{
 			"access_token":  tokens.AccessToken,
 			"refresh_token": tokens.RefreshToken,
@@ -393,36 +402,59 @@ func main() {
 
 	r.POST("/token", func(c *gin.Context) {
 		claims := &Claims{}
+
+		// Get refresh token from request body
 		token := Tokens{}
 		if err := c.BindJSON(&token); err != nil {
 			logger.Errorf("couldn't bind token body %v", err)
-			c.JSON(http.StatusBadRequest, err.Error())
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   err.Error(),
+				"message": "Couldn't parse the request body",
+			})
 			return
 		}
+
+		// Validate jwt token
 		tkn, err := jwt.ParseWithClaims(token.RefreshToken, claims, func(t *jwt.Token) (interface{}, error) {
 			return JWT_SECRET, nil
 		})
 		if err != nil {
-			logger.Errorf("couldn't parse token %v", err)
-			c.AbortWithStatusJSON(http.StatusBadRequest, "Cannot parse token")
+			logger.Errorf("token didn't parse %v", err)
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+				"error":   err.Error(),
+				"message": "Couldn't parse token",
+			})
 			return
 		}
 
+		// Check expire time of the given token
 		if claims.ExpiresAt.Unix() < time.Now().Local().Unix() {
 			logger.Errorf("refresh_token is expired")
-			c.AbortWithStatusJSON(http.StatusForbidden, "Token expired")
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"error":   "token expired",
+				"message": "Token is expired",
+			})
 			return
 		}
 
+		// Again validate token
 		if !tkn.Valid {
 			logger.Errorf("invalid token")
-			c.AbortWithStatusJSON(http.StatusBadRequest, "Invalid token")
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+				"error":   "invalid token",
+				"message": "The token is invalid",
+			})
 			return
 		}
 
+		// Create refresh token
 		tokens, err := RefreshToken(claims)
 		if err != nil {
-			c.JSON(http.StatusForbidden, err.Error())
+			logger.Errorf("couldn't create refresh token")
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   err.Error(),
+				"message": "Couldn't create refresh token",
+			})
 			return
 		}
 
