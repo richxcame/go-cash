@@ -41,6 +41,7 @@ type RangeBodyResponse struct {
 }
 
 type CashBodyResponse struct {
+	UUID      uuid.UUID `json:"uuid"`
 	Amount    float64   `json:"amount" binding:"required"`
 	Detail    string    `json:"detail"`
 	Note      string    `json:"note"`
@@ -296,7 +297,7 @@ func main() {
 		}
 		valuesWithPagination := append(values, offset, limit)
 
-		sqlStatement := `SELECT c.amount, c.contact, c.client, c.detail, c.note, c.created_at FROM cashes c`
+		sqlStatement := `SELECT c.uuid, c.amount, c.contact, c.client, c.detail, c.note, c.created_at FROM cashes c`
 		sqlFilters := ""
 		if len(queries) > 0 {
 			sqlFilters += " WHERE "
@@ -319,7 +320,7 @@ func main() {
 		cashes := make([]CashBodyResponse, 0)
 		for rows.Next() {
 			var cash CashBodyResponse
-			err := rows.Scan(&cash.Amount, &cash.Contact, &cash.Client, &cash.Detail, &cash.Note, &cash.CreatedAt)
+			err := rows.Scan(&cash.UUID, &cash.Amount, &cash.Contact, &cash.Client, &cash.Detail, &cash.Note, &cash.CreatedAt)
 			if err != nil {
 				logger.Errorf("Scan error %v", err)
 				ctx.JSON(http.StatusInternalServerError, gin.H{
