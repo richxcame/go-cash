@@ -178,7 +178,7 @@ func main() {
 		})
 	})
 
-	r.GET("/ranges", func(ctx *gin.Context) {
+	r.GET("/ranges", Auth(), func(ctx *gin.Context) {
 		offset, limit := Paginate(ctx)
 
 		// Find ranges
@@ -257,53 +257,6 @@ func main() {
 		ctx.JSON(200, gin.H{
 			"ranges": resultRanges,
 			"total":  totalRanges,
-		})
-	})
-
-	// TODO: need fix
-	r.GET("/reports", func(ctx *gin.Context) {
-		var cashBody CashBodyResponse
-		var cashBodies []CashBodyResponse
-		sqlStatement := `
-		SELECT
-		MAX(client),
-		MAX(contact),
-		SUM(amount),
-		MAX(detail),
-		MAX(created_at)
-	FROM
-		cashes
-	WHERE
-		created_at > $1
-		AND created_at < $2
-	GROUP BY
-		contact
-	ORDER BY
-		MAX(created_at) DESC;`
-		rows, err := db.Query(context.Background(), sqlStatement, "2023-03-19", "2023-03-20")
-		if err != nil {
-			logger.Errorf("cashes search error %v", err)
-			ctx.JSON(http.StatusInternalServerError, gin.H{
-				"error":   err,
-				"message": "Something went wrong",
-			})
-			return
-		}
-		for rows.Next() {
-			err := rows.Scan(&cashBody.Client, &cashBody.Contact, &cashBody.Amount, &cashBody.Detail, &cashBody.CreatedAt)
-			if err != nil {
-				logger.Errorf("Scan error %v", err)
-				ctx.JSON(http.StatusInternalServerError, gin.H{
-					"error":   err,
-					"message": "Scan error",
-				})
-				return
-			}
-			cashBodies = append(cashBodies, cashBody)
-		}
-		ctx.JSON(200, gin.H{
-			"message": "Successfully get cashes",
-			"ranges":  cashBodies,
 		})
 	})
 
