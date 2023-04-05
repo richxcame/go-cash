@@ -6,6 +6,7 @@ import (
 	"gocash/pkg/arrs"
 	"gocash/pkg/db"
 	"gocash/pkg/logger"
+	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	_ "github.com/joho/godotenv/autoload"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -34,10 +36,13 @@ type RangeBody struct {
 }
 
 type RangeBodyResponse struct {
-	Detail    string    `json:"detail"`
-	Note      string    `json:"note"`
-	Client    string    `json:"client"`
-	CreatedAt time.Time `json:"created_at"`
+	UUID        uuid.UUID `json:"uuid"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	Client      string    `json:"client"`
+	Detail      string    `json:"detail"`
+	Note        string    `json:"note"`
+	TotalAmount float64   `json:"total_amount"`
 }
 
 type CashBodyResponse struct {
@@ -51,9 +56,25 @@ type CashBodyResponse struct {
 }
 
 var JWT_SECRET []byte
+var ACCESS_TOKEN_TIMEOUT int
+var REFRESH_TOKEN_TIMEOUT int
 
 func init() {
 	JWT_SECRET = []byte(os.Getenv("JWT_SECRET"))
+
+	accessTokenTimeout := os.Getenv("ACCESS_TOKEN_TIMEOUT")
+	accessTimeout, err := strconv.Atoi(accessTokenTimeout)
+	if err != nil {
+		log.Fatalf("couldn't convert access token timeout to integer: %v", err)
+	}
+	ACCESS_TOKEN_TIMEOUT = accessTimeout
+
+	refreshTokenTimeout := os.Getenv("REFRESH_TOKEN_TIMEOUT")
+	refreshTimeout, err := strconv.Atoi(refreshTokenTimeout)
+	if err != nil {
+		log.Fatalf("couldn't convert refresh token timeout to integer: %v", err)
+	}
+	REFRESH_TOKEN_TIMEOUT = refreshTimeout
 }
 
 func main() {
@@ -158,52 +179,84 @@ func main() {
 	})
 
 	r.GET("/ranges", func(ctx *gin.Context) {
-		offsetQuery := ctx.DefaultQuery("offset", "0")
-		limitQuery := ctx.DefaultQuery("limit", "20")
-		offset, err := strconv.Atoi(offsetQuery)
-		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{
-				"error":   err.Error(),
-				"message": "offset value must be convertable to integer",
-			})
-			return
-		}
-		limit, err := strconv.Atoi(limitQuery)
-		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{
-				"error":   err.Error(),
-				"message": "limit value must be convertable to integer",
-			})
-			return
-		}
+		offset, limit := Paginate(ctx)
 
+		// Find ranges
 		var rangeBodies []RangeBodyResponse
-		sqlStatement := `SELECT r.detail, r.note, r.client, r.created_at, r.updated_at FROM ranges r ORDER BY r.created_at DESC OFFSET $1 LIMIT $2;`
+		sqlStatement := `SELECT r.uuid, r.created_at, r.updated_at, r.client, r.detail, r.note FROM ranges r ORDER BY r.created_at DESC OFFSET $1 LIMIT $2;`
 		rows, err := db.Query(context.Background(), sqlStatement, offset, limit)
 		if err != nil {
 			logger.Errorf("ranges search error %v", err)
 			ctx.JSON(http.StatusInternalServerError, gin.H{
-				"error":   err,
+				"error":   err.Error(),
 				"message": "Something went wrong",
 			})
 			return
 		}
 		for rows.Next() {
 			var rangeBody RangeBodyResponse
-			err := rows.Scan(&rangeBody.Detail, &rangeBody.Note, &rangeBody.Client, &rangeBody.CreatedAt)
+			err := rows.Scan(&rangeBody.UUID, &rangeBody.CreatedAt, &rangeBody.UpdatedAt, &rangeBody.Client, &rangeBody.Detail, &rangeBody.Note)
 			if err != nil {
 				logger.Errorf("Scan error %v", err)
 				ctx.JSON(http.StatusInternalServerError, gin.H{
-					"error":   err,
+					"error":   err.Error(),
 					"message": "Scan error",
 				})
 				return
 			}
 			rangeBodies = append(rangeBodies, rangeBody)
 		}
+
+		resultRanges := make([]RangeBodyResponse, 0)
+		for _, v := range rangeBodies {
+			var rangeBody RangeBodyResponse
+			err := db.QueryRow(context.Background(), "SELECT r.created_at, r.client FROM ranges r  WHERE created_at < $1 AND client=$2 ORDER BY created_at DESC limit 1", v.CreatedAt, v.Client).Scan(&rangeBody.CreatedAt, &rangeBody.Client)
+			if err != nil && err != pgx.ErrNoRows {
+				logger.Errorf("last range not found: %v", err)
+				ctx.JSON(http.StatusInternalServerError, gin.H{
+					"error":   err.Error(),
+					"message": "Couldn't find searching range",
+				})
+				return
+			} else if err == pgx.ErrNoRows {
+				rangeBody.CreatedAt = time.Date(2001, 12, 28, 0, 0, 0, 0, time.Now().Location())
+			}
+
+			// Search sum of cashes between the two ranges
+			var totalAmount float64
+			err = db.QueryRow(context.Background(), "SELECT SUM(amount) FROM cashes where created_at >= $1 AND created_at <= $2 AND client=$3", rangeBody.CreatedAt, v.CreatedAt, v.Client).Scan(&totalAmount)
+			if err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{
+					"error":   err.Error(),
+					"message": "Couldn't find total amount of the range",
+				})
+			}
+			resultRanges = append(resultRanges, RangeBodyResponse{
+				UUID:        v.UUID,
+				CreatedAt:   v.CreatedAt,
+				UpdatedAt:   v.UpdatedAt,
+				Client:      v.Client,
+				Note:        v.Note,
+				Detail:      v.Detail,
+				TotalAmount: totalAmount,
+			})
+		}
+
+		// Find total count of ranges
+		totalRanges := 0
+		err = db.QueryRow(context.Background(), "SELECT COUNT(*) FROM ranges").Scan(&totalRanges)
+		if err != nil {
+			logger.Errorf("couldn't find total count of ranges: %v", err)
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error":   err.Error(),
+				"message": "Couldn't find total number of ranges",
+			})
+			return
+		}
+
 		ctx.JSON(200, gin.H{
-			"message": "Successfully get ranges",
-			"ranges":  rangeBodies,
+			"ranges": resultRanges,
+			"total":  totalRanges,
 		})
 	})
 
@@ -511,7 +564,7 @@ func Auth() gin.HandlerFunc {
 			return JWT_SECRET, nil
 		})
 		if err != nil {
-			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
 				"error":   err.Error(),
 				"message": "Couldn't parse token",
 			})
@@ -527,7 +580,7 @@ func Auth() gin.HandlerFunc {
 		}
 
 		if !tkn.Valid {
-			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
 				"error":   "invalid_token",
 				"message": "Invalid token",
 			})
@@ -540,7 +593,8 @@ func Auth() gin.HandlerFunc {
 // GenerateJWT creates access and refresh tokens with user's username
 func GenerateJWT(username string) (token Tokens, err error) {
 	// Create access token
-	accessTokenExp := time.Now().Add(3 * time.Hour)
+	os.Getenv("ACCESS_TOKEN_TIMEOUT")
+	accessTokenExp := time.Now().Add(time.Duration(ACCESS_TOKEN_TIMEOUT) * time.Second)
 	accessClaims := &Claims{
 		User: User{
 			Username: username,
@@ -556,7 +610,7 @@ func GenerateJWT(username string) (token Tokens, err error) {
 	}
 
 	// Create refresh token
-	refreshTokenExp := time.Now().Add(24 * time.Hour * 30)
+	refreshTokenExp := time.Now().Add(time.Duration(REFRESH_TOKEN_TIMEOUT) * time.Minute)
 	refreshClaims := &Claims{
 		User: User{
 			Username: username,
@@ -575,11 +629,7 @@ func GenerateJWT(username string) (token Tokens, err error) {
 }
 
 func RefreshToken(claims *Claims) (token Tokens, err error) {
-	accessTokenTimeOut, err := strconv.Atoi(os.Getenv("ACCESS_TOKEN_TIMEOUT"))
-	if err != nil {
-		return Tokens{}, err
-	}
-	expirationTime := time.Now().Add(time.Duration(accessTokenTimeOut) * time.Second)
+	expirationTime := time.Now().Add(time.Duration(ACCESS_TOKEN_TIMEOUT) * time.Second)
 
 	claims.ExpiresAt = &jwt.NumericDate{Time: expirationTime}
 	accessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -588,11 +638,7 @@ func RefreshToken(claims *Claims) (token Tokens, err error) {
 		return Tokens{}, err
 	}
 
-	refreshTokenTimeOut, err := strconv.Atoi(os.Getenv("REFRESH_TOKEN_TIMEOUT"))
-	if err != nil {
-		return Tokens{}, err
-	}
-	expirationTime = time.Now().Add(time.Duration(refreshTokenTimeOut) * time.Second)
+	expirationTime = time.Now().Add(time.Duration(REFRESH_TOKEN_TIMEOUT) * time.Second)
 
 	claims.ExpiresAt = &jwt.NumericDate{Time: expirationTime}
 
@@ -604,4 +650,22 @@ func RefreshToken(claims *Claims) (token Tokens, err error) {
 	}
 
 	return token, nil
+}
+
+func Paginate(ctx *gin.Context) (offset, limit int) {
+	offset, limit = 0, 20
+	// Prepare pagination details
+	offsetQuery := ctx.DefaultQuery("offset", "0")
+	limitQuery := ctx.DefaultQuery("limit", "20")
+
+	offset, err := strconv.Atoi(offsetQuery)
+	if err != nil {
+		offset = 0
+	}
+	limit, err = strconv.Atoi(limitQuery)
+	if err != nil {
+		limit = 50
+	}
+	return offset, limit
+
 }
