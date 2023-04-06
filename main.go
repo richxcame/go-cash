@@ -469,6 +469,33 @@ func main() {
 		c.JSON(http.StatusOK, tokens)
 	})
 
+	r.GET("/cashes/:uuid", func(ctx *gin.Context) {
+		// Get UUID from URL param
+		uuid, ok := ctx.Params.Get("uuid")
+		if !ok {
+			ctx.JSON(http.StatusBadRequest, gin.H{
+				"error":   "uuid is required",
+				"message": "Coulnd't find UUID",
+			})
+			return
+		}
+
+		// Find the cash with given UUID
+		var cash CashBodyResponse
+		err := db.QueryRow(context.Background(), "SELECT uuid, created_at, client, contact, amount, detail, note FROM cashes where uuid = $1", uuid).Scan(&cash.UUID, &cash.CreatedAt, &cash.Client, &cash.Contact, &cash.Amount, &cash.Detail, &cash.Note)
+		if err != nil {
+			logger.Error(err)
+			ctx.JSON(http.StatusNotFound, gin.H{
+				"error":   err.Error(),
+				"message": "Couldn't find the cash details",
+			})
+			return
+		}
+		ctx.JSON(200, gin.H{
+			"cash": cash,
+		})
+	})
+
 	r.Run()
 }
 
