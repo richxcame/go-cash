@@ -469,7 +469,7 @@ func main() {
 		c.JSON(http.StatusOK, tokens)
 	})
 
-	r.GET("/cashes/:uuid", func(ctx *gin.Context) {
+	r.GET("/cashes/:uuid", Auth(), func(ctx *gin.Context) {
 		// Get UUID from URL param
 		uuid, ok := ctx.Params.Get("uuid")
 		if !ok {
