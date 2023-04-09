@@ -264,24 +264,7 @@ func main() {
 	// Filters: amount, detail, note, client, contact as array
 	// Pagination: offset, limit with defaults respectively 0, 50
 	r.GET("/cashes", Auth(), func(ctx *gin.Context) {
-		offsetQuery := ctx.DefaultQuery("offset", "0")
-		limitQuery := ctx.DefaultQuery("limit", "50")
-		offset, err := strconv.Atoi(offsetQuery)
-		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{
-				"error":   err.Error(),
-				"message": "offset value must be convertable to integer",
-			})
-			return
-		}
-		limit, err := strconv.Atoi(limitQuery)
-		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{
-				"error":   err.Error(),
-				"message": "limit value must be convertable to integer",
-			})
-			return
-		}
+		offset, limit := Paginate(ctx)
 
 		urlQueries := ctx.Request.URL.Query()
 		index := 0
