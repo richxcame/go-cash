@@ -223,13 +223,17 @@ func main() {
 			}
 
 			// Search sum of cashes between the two ranges
-			var totalAmount float64
+			var totalAmount *float64
 			err = db.QueryRow(context.Background(), "SELECT SUM(amount) FROM cashes where created_at >= $1 AND created_at <= $2 AND client=$3", rangeBody.CreatedAt, v.CreatedAt, v.Client).Scan(&totalAmount)
 			if err != nil {
 				ctx.JSON(http.StatusInternalServerError, gin.H{
 					"error":   err.Error(),
 					"message": "Couldn't find total amount of the range",
 				})
+			}
+			if totalAmount == nil {
+				defaultTotalAmount := float64(0)
+				totalAmount = &defaultTotalAmount
 			}
 			resultRanges = append(resultRanges, RangeBodyResponse{
 				UUID:        v.UUID,
@@ -238,7 +242,7 @@ func main() {
 				Client:      v.Client,
 				Note:        v.Note,
 				Detail:      v.Detail,
-				TotalAmount: totalAmount,
+				TotalAmount: *totalAmount,
 			})
 		}
 
