@@ -8,6 +8,7 @@ import (
 	"gocash/pkg/logger"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -333,6 +334,14 @@ func main() {
 		var queries []string
 		for k, v := range urlQueries {
 			if arrs.Contains([]string{"uuid", "client", "contact", "amount", "detail", "note"}, k) {
+				if k == "contact" {
+					for kcon, vcon := range v {
+						if strings.Contains(vcon, " ") {
+							str, _ := url.QueryUnescape(strings.Split(vcon, " ")[1])
+							v[kcon] = str
+						}
+					}
+				}
 				str := ""
 				for _, v := range v {
 					str += v + "|"
