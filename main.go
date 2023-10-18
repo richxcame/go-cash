@@ -3,10 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"gocash/config"
 	"gocash/pkg/db"
 	"gocash/pkg/logger"
 	"gocash/utils/arrs"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,10 +15,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	_ "github.com/joho/godotenv/autoload"
+
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -71,26 +71,8 @@ type CashBodyResponse struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-var JWT_SECRET []byte
-var ACCESS_TOKEN_TIMEOUT int
-var REFRESH_TOKEN_TIMEOUT int
-
 func init() {
-	JWT_SECRET = []byte(os.Getenv("JWT_SECRET"))
-
-	accessTokenTimeout := os.Getenv("ACCESS_TOKEN_TIMEOUT")
-	accessTimeout, err := strconv.Atoi(accessTokenTimeout)
-	if err != nil {
-		log.Fatalf("couldn't convert access token timeout to integer: %v", err)
-	}
-	ACCESS_TOKEN_TIMEOUT = accessTimeout
-
-	refreshTokenTimeout := os.Getenv("REFRESH_TOKEN_TIMEOUT")
-	refreshTimeout, err := strconv.Atoi(refreshTokenTimeout)
-	if err != nil {
-		log.Fatalf("couldn't convert refresh token timeout to integer: %v", err)
-	}
-	REFRESH_TOKEN_TIMEOUT = refreshTimeout
+	config.InitGlobals()
 }
 
 func main() {
@@ -476,7 +458,7 @@ func main() {
 
 		// Validate jwt token
 		tkn, err := jwt.ParseWithClaims(token.RefreshToken, claims, func(t *jwt.Token) (interface{}, error) {
-			return JWT_SECRET, nil
+			return config.GlobalConfig.JWT_SECRET, nil
 		})
 		if err != nil {
 			logger.Errorf("token didn't parse %v", err)
@@ -594,7 +576,7 @@ func Auth() gin.HandlerFunc {
 			return
 		}
 		tkn, err := jwt.ParseWithClaims(token, claims, func(t *jwt.Token) (interface{}, error) {
-			return JWT_SECRET, nil
+			return config.GlobalConfig.JWT_SECRET, nil
 		})
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
@@ -627,7 +609,7 @@ func Auth() gin.HandlerFunc {
 func GenerateJWT(username string) (token Tokens, err error) {
 	// Create access token
 	os.Getenv("ACCESS_TOKEN_TIMEOUT")
-	accessTokenExp := time.Now().Add(time.Duration(ACCESS_TOKEN_TIMEOUT) * time.Second)
+	accessTokenExp := time.Now().Add(time.Duration(config.GlobalConfig.ACCESS_TOKEN_TIMEOUT) * time.Second)
 	accessClaims := &Claims{
 		User: User{
 			Username: username,
@@ -637,13 +619,13 @@ func GenerateJWT(username string) (token Tokens, err error) {
 		},
 	}
 	accessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)
-	token.AccessToken, err = accessToken.SignedString(JWT_SECRET)
+	token.AccessToken, err = accessToken.SignedString(config.GlobalConfig.JWT_SECRET)
 	if err != nil {
 		return Tokens{}, err
 	}
 
 	// Create refresh token
-	refreshTokenExp := time.Now().Add(time.Duration(REFRESH_TOKEN_TIMEOUT) * time.Minute)
+	refreshTokenExp := time.Now().Add(time.Duration(config.GlobalConfig.REFRESH_TOKEN_TIMEOUT) * time.Minute)
 	refreshClaims := &Claims{
 		User: User{
 			Username: username,
@@ -653,7 +635,7 @@ func GenerateJWT(username string) (token Tokens, err error) {
 		},
 	}
 	refreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
-	token.RefreshToken, err = refreshToken.SignedString(JWT_SECRET)
+	token.RefreshToken, err = refreshToken.SignedString(config.GlobalConfig.JWT_SECRET)
 	if err != nil {
 		return Tokens{}, err
 	}
@@ -662,22 +644,22 @@ func GenerateJWT(username string) (token Tokens, err error) {
 }
 
 func RefreshToken(claims *Claims) (token Tokens, err error) {
-	expirationTime := time.Now().Add(time.Duration(ACCESS_TOKEN_TIMEOUT) * time.Second)
+	expirationTime := time.Now().Add(time.Duration(config.GlobalConfig.ACCESS_TOKEN_TIMEOUT) * time.Second)
 
 	claims.ExpiresAt = &jwt.NumericDate{Time: expirationTime}
 	accessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	token.AccessToken, err = accessToken.SignedString(JWT_SECRET)
+	token.AccessToken, err = accessToken.SignedString(config.GlobalConfig.JWT_SECRET)
 	if err != nil {
 		return Tokens{}, err
 	}
 
-	expirationTime = time.Now().Add(time.Duration(REFRESH_TOKEN_TIMEOUT) * time.Second)
+	expirationTime = time.Now().Add(time.Duration(config.GlobalConfig.REFRESH_TOKEN_TIMEOUT) * time.Second)
 
 	claims.ExpiresAt = &jwt.NumericDate{Time: expirationTime}
 
 	refreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
-	token.RefreshToken, err = refreshToken.SignedString(JWT_SECRET)
+	token.RefreshToken, err = refreshToken.SignedString(config.GlobalConfig.JWT_SECRET)
 	if err != nil {
 		return Tokens{}, err
 	}
