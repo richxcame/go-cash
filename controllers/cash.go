@@ -18,7 +18,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func CashController(ctx *gin.Context) {
+func CreateCashController(ctx *gin.Context) {
 	// Get request body
 	var body models.CashBody
 	if err := ctx.BindJSON(&body); err != nil {
@@ -65,7 +65,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 	})
 }
 
-func CashesWihtAuth(ctx *gin.Context) {
+func GetCashesWihtAuth(ctx *gin.Context) {
 	offset, limit := utils.Paginate(ctx)
 
 	urlQueries := ctx.Request.URL.Query()

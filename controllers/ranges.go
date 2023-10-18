@@ -14,7 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func RangesController(ctx *gin.Context) {
+func CreateRangesController(ctx *gin.Context) {
 	// Get request body
 	var body models.RangeBody
 	if err := ctx.BindJSON(&body); err != nil {
@@ -61,7 +61,7 @@ func RangesController(ctx *gin.Context) {
 	})
 }
 
-func RangesWithAuth(ctx *gin.Context) {
+func GetRangesWithAuth(ctx *gin.Context) {
 	offset, limit := utils.Paginate(ctx)
 
 	// Find ranges
