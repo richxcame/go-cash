@@ -9,6 +9,7 @@ import (
 
 func InitRoutes() *gin.Engine {
 	r := gin.Default()
+	r.Use(middlewares.CORSMiddleware())
 
 	r.POST("/cashes", controllers.CashController)
 	r.POST("/ranges", controllers.RangesController)
