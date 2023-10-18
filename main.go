@@ -3,9 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
-	"gocash/pkg/arrs"
 	"gocash/pkg/db"
 	"gocash/pkg/logger"
+	"gocash/utils/arrs"
 	"log"
 	"net/http"
 	"net/url"
