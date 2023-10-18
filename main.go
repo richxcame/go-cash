@@ -8,6 +8,7 @@ import (
 	"gocash/pkg/logger"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -36,13 +37,28 @@ type RangeBody struct {
 }
 
 type RangeBodyResponse struct {
-	UUID        uuid.UUID `json:"uuid"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	Client      string    `json:"client"`
-	Detail      string    `json:"detail"`
-	Note        string    `json:"note"`
-	TotalAmount float64   `json:"total_amount"`
+	UUID        uuid.UUID  `json:"uuid"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+	Client      string     `json:"client"`
+	Detail      string     `json:"detail"`
+	Note        string     `json:"note"`
+	TotalAmount float64    `json:"total_amount"`
+	Currencies  Currencies `json:"currencies"`
+}
+
+type Currencies struct {
+	One        Currency `json:"one"`
+	Five       Currency `json:"five"`
+	Ten        Currency `json:"ten"`
+	Twenty     Currency `json:"twenty"`
+	Fifty      Currency `json:"fifty"`
+	OneHundred Currency `json:"one_hundred"`
+}
+
+type Currency struct {
+	TotalAmount float64 `json:"total_amount"`
+	Amount      uint    `json:"amount"`
 }
 
 type CashBodyResponse struct {
@@ -235,6 +251,47 @@ func main() {
 				defaultTotalAmount := float64(0)
 				totalAmount = &defaultTotalAmount
 			}
+
+			// Search sum and amount of one currency cashes between the two ranges
+			var currencies Currencies
+			for _, vCurrency := range []uint{1, 5, 10, 20, 50, 100} {
+				var currency Currency
+				rowOne, err := db.Query(context.Background(), "SELECT SUM(amount),COUNT(amount) FROM cashes where created_at >= $1 AND created_at <= $2 AND client=$3 AND amount = $4 GROUP BY amount", rangeBody.CreatedAt, v.CreatedAt, v.Client, vCurrency)
+				if err != nil {
+					ctx.JSON(http.StatusInternalServerError, gin.H{
+						"error":   err.Error(),
+						"message": "Couldn't find total amount of the range",
+					})
+				}
+
+				for rowOne.Next() {
+					err := rowOne.Scan(&currency.TotalAmount, &currency.Amount)
+					if err != nil {
+						logger.Errorf("Scan error %v", err)
+						ctx.JSON(http.StatusInternalServerError, gin.H{
+							"error":   err.Error(),
+							"message": "Scan error",
+						})
+						return
+					}
+				}
+
+				switch vCurrency {
+				case 1:
+					currencies.One = currency
+				case 5:
+					currencies.Five = currency
+				case 10:
+					currencies.Ten = currency
+				case 20:
+					currencies.Twenty = currency
+				case 50:
+					currencies.Fifty = currency
+				case 100:
+					currencies.OneHundred = currency
+				}
+			}
+
 			resultRanges = append(resultRanges, RangeBodyResponse{
 				UUID:        v.UUID,
 				CreatedAt:   v.CreatedAt,
@@ -243,6 +300,7 @@ func main() {
 				Note:        v.Note,
 				Detail:      v.Detail,
 				TotalAmount: *totalAmount,
+				Currencies:  currencies,
 			})
 		}
 
@@ -276,6 +334,14 @@ func main() {
 		var queries []string
 		for k, v := range urlQueries {
 			if arrs.Contains([]string{"uuid", "client", "contact", "amount", "detail", "note"}, k) {
+				if k == "contact" {
+					for kcon, vcon := range v {
+						if strings.Contains(vcon, " ") {
+							str, _ := url.QueryUnescape(strings.Split(vcon, " ")[1])
+							v[kcon] = str
+						}
+					}
+				}
 				str := ""
 				for _, v := range v {
 					str += v + "|"
