@@ -14,9 +14,6 @@ func InitRoutes() *gin.Engine {
 	r.POST("/cashes", controllers.CashController)
 	r.POST("/ranges", controllers.RangesController)
 	r.GET("/ranges", middlewares.Auth(), controllers.RangesWithAuth)
-	// /cashes
-	// Filters: amount, detail, note, client, contact as array
-	// Pagination: offset, limit with defaults respectively 0, 50
 	r.GET("/cashes", middlewares.Auth(), controllers.CashesWihtAuth)
 	r.POST("/login", controllers.Login)
 	r.POST("/token", controllers.RefreshToken)
