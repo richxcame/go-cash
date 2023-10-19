@@ -96,14 +96,14 @@ func GetCashes(ctx *gin.Context) {
 	}
 	valuesWithPagination := append(values, offset, limit)
 
-	sqlStatement := `SELECT c.uuid, c.amount, c.contact, c.client, c.detail, c.note, c.created_at FROM cashes c`
+	sqlStatement := `SELECT c.contact, c.detail, SUM(c.amount), MAX(created_at) FROM cashes c`
 	sqlFilters := ""
 	if len(queries) > 0 {
 		sqlFilters += " WHERE "
 		sqlFilters += strings.Join(queries, " AND ")
 	}
 	sqlStatement += sqlFilters
-	sqlStatement += " ORDER BY created_at DESC "
+	sqlStatement += " GROUP BY c.contact, c.detail ORDER BY MAX(created_at) DESC "
 	sqlStatement += fmt.Sprintf(" offset $%v limit $%v", index+1, index+2)
 	rows, err := db.DB.Query(context.Background(), sqlStatement, valuesWithPagination...)
 	if err != nil {
@@ -119,7 +119,7 @@ func GetCashes(ctx *gin.Context) {
 	cashes := make([]models.CashBodyResponse, 0)
 	for rows.Next() {
 		var cash models.CashBodyResponse
-		err := rows.Scan(&cash.UUID, &cash.Amount, &cash.Contact, &cash.Client, &cash.Detail, &cash.Note, &cash.CreatedAt)
+		err := rows.Scan(&cash.Contact, &cash.Detail, &cash.Amount, &cash.CreatedAt)
 		if err != nil {
 			logger.Errorf("Scan error %v", err)
 			ctx.JSON(http.StatusInternalServerError, gin.H{
@@ -160,7 +160,7 @@ func CashesByUUID(ctx *gin.Context) {
 	}
 
 	// Find the cash with given UUID
-	var cash models.CashBodyResponse
+	var cash models.CashBodyResponseBooking
 	err := db.DB.QueryRow(context.Background(), "SELECT uuid, created_at, client, contact, amount, detail, note FROM cashes where uuid = $1", uuid).Scan(&cash.UUID, &cash.CreatedAt, &cash.Client, &cash.Contact, &cash.Amount, &cash.Detail, &cash.Note)
 	if err != nil {
 		logger.Error(err)

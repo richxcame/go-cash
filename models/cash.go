@@ -14,12 +14,19 @@ type CashBody struct {
 	Note    string  `json:"note"`
 }
 
-type CashBodyResponse struct {
+type CashBodyResponseBooking struct {
 	UUID      uuid.UUID `json:"uuid"`
 	Amount    float64   `json:"amount" binding:"required"`
 	Detail    string    `json:"detail"`
 	Note      string    `json:"note"`
 	Client    string    `json:"client"`
+	Contact   string    `json:"contact"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type CashBodyResponse struct {
+	Amount    float64   `json:"amount" binding:"required"`
+	Detail    string    `json:"detail"`
 	Contact   string    `json:"contact"`
 	CreatedAt time.Time `json:"created_at"`
 }
