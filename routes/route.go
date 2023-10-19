@@ -15,10 +15,10 @@ func InitRoutes() *gin.Engine {
 	r.POST("/ranges", controllers.CreateRangesController)
 	r.GET("/ranges", middlewares.Auth(), controllers.GetRanges)
 	r.GET("/cashes", middlewares.Auth(), controllers.GetCashes)
-	r.GET("/check/:ticket-number", middlewares.Auth(), controllers.CheckBookingNumber)
+	r.GET("/check/:booking-number", middlewares.Auth(), controllers.CheckBookingNumber)
 	r.POST("/login", controllers.Login)
 	r.POST("/token", controllers.RefreshToken)
-	r.GET("/cashes/:uuid", middlewares.Auth(), controllers.CashesByUUID)
+	r.GET("/cashes/:booking-number", middlewares.Auth(), controllers.CashesByBooking)
 
 	return r
 }

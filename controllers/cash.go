@@ -148,20 +148,20 @@ func GetCashes(ctx *gin.Context) {
 	})
 }
 
-func CashesByUUID(ctx *gin.Context) {
-	// Get UUID from URL param
-	uuid, ok := ctx.Params.Get("uuid")
+func CashesByBooking(ctx *gin.Context) {
+	// Get Booking Number from URL param
+	bookingNumber, ok := ctx.Params.Get("booking-number")
 	if !ok {
 		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error":   "uuid is required",
-			"message": "Coulnd't find UUID",
+			"error":   "Booking Number is required",
+			"message": "Coulnd't find Booking Number",
 		})
 		return
 	}
 
-	// Find the cash with given UUID
-	var cash models.CashBodyResponseBooking
-	err := db.DB.QueryRow(context.Background(), "SELECT uuid, created_at, client, contact, amount, detail, note FROM cashes where uuid = $1", uuid).Scan(&cash.UUID, &cash.CreatedAt, &cash.Client, &cash.Contact, &cash.Amount, &cash.Detail, &cash.Note)
+	// Find the cash with given Booking Number
+	cashes := make([]models.CashBodyResponseBooking, 0)
+	rows, err := db.DB.Query(context.Background(), "SELECT uuid, created_at, client, contact, amount, detail, note FROM cashes where detail = $1", bookingNumber)
 	if err != nil {
 		logger.Error(err)
 		ctx.JSON(http.StatusNotFound, gin.H{
@@ -170,7 +170,21 @@ func CashesByUUID(ctx *gin.Context) {
 		})
 		return
 	}
+	defer rows.Close()
+	for rows.Next() {
+		var cash models.CashBodyResponseBooking
+		err := rows.Scan(&cash.UUID, &cash.CreatedAt, &cash.Client, &cash.Contact, &cash.Amount, &cash.Detail, &cash.Note)
+		if err != nil {
+			logger.Errorf("Scan error %v", err)
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error":   err,
+				"message": "Scan error",
+			})
+			return
+		}
+		cashes = append(cashes, cash)
+	}
 	ctx.JSON(200, gin.H{
-		"cash": cash,
+		"cashes": cashes,
 	})
 }

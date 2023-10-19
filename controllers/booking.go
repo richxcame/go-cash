@@ -13,7 +13,7 @@ import (
 func CheckBookingNumber(ctx *gin.Context) {
 	var bookingsResponse models.BookingsResponse
 
-	ticketNumber := ctx.Param("ticket-number")
+	ticketNumber := ctx.Param("booking-number")
 	url := config.GlobalConfig.BOOKINGS_API_URL + ticketNumber
 
 	response, err := http.Get(url)
