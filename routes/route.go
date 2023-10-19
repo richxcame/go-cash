@@ -13,8 +13,9 @@ func InitRoutes() *gin.Engine {
 
 	r.POST("/cashes", controllers.CreateCashController)
 	r.POST("/ranges", controllers.CreateRangesController)
-	r.GET("/ranges", middlewares.Auth(), controllers.GetRangesWithAuth)
-	r.GET("/cashes", middlewares.Auth(), controllers.GetCashesWihtAuth)
+	r.GET("/ranges", middlewares.Auth(), controllers.GetRanges)
+	r.GET("/cashes", middlewares.Auth(), controllers.GetCashes)
+	r.GET("/check/:ticket-number", middlewares.Auth(), controllers.CheckBookingNumber)
 	r.POST("/login", controllers.Login)
 	r.POST("/token", controllers.RefreshToken)
 	r.GET("/cashes/:uuid", middlewares.Auth(), controllers.CashesByUUID)

@@ -61,7 +61,7 @@ func CreateRangesController(ctx *gin.Context) {
 	})
 }
 
-func GetRangesWithAuth(ctx *gin.Context) {
+func GetRanges(ctx *gin.Context) {
 	offset, limit := utils.Paginate(ctx)
 
 	// Find ranges

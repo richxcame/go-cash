@@ -65,7 +65,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 	})
 }
 
-func GetCashesWihtAuth(ctx *gin.Context) {
+func GetCashes(ctx *gin.Context) {
 	offset, limit := utils.Paginate(ctx)
 
 	urlQueries := ctx.Request.URL.Query()
