@@ -12,6 +12,7 @@ type Globals struct {
 	JWT_SECRET            []byte
 	ACCESS_TOKEN_TIMEOUT  int
 	REFRESH_TOKEN_TIMEOUT int
+	BOOKINGS_API_URL      string
 }
 
 var GlobalConfig Globals
@@ -31,4 +32,6 @@ func InitGlobals() {
 		log.Fatalf("couldn't convert refresh token timeout to integer: %v", err)
 	}
 	GlobalConfig.REFRESH_TOKEN_TIMEOUT = refreshTimeout
+
+	GlobalConfig.BOOKINGS_API_URL = os.Getenv("BOOKINGS_API_URL")
 }
