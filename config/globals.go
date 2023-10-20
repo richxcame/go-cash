@@ -13,6 +13,9 @@ type Globals struct {
 	ACCESS_TOKEN_TIMEOUT  int
 	REFRESH_TOKEN_TIMEOUT int
 	BOOKINGS_API_URL      string
+	GOTOLEG_URL           string
+	GOTOLEG_LOGIN         string
+	GOTOLEG_PASS          string
 }
 
 var GlobalConfig Globals
@@ -34,4 +37,7 @@ func InitGlobals() {
 	GlobalConfig.REFRESH_TOKEN_TIMEOUT = refreshTimeout
 
 	GlobalConfig.BOOKINGS_API_URL = os.Getenv("BOOKINGS_API_URL")
+	GlobalConfig.GOTOLEG_URL = os.Getenv("GOTOLEG_URL")
+	GlobalConfig.GOTOLEG_LOGIN = os.Getenv("GOTOLEG_LOGIN")
+	GlobalConfig.GOTOLEG_PASS = os.Getenv("GOTOLEG_PASS")
 }
