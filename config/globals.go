@@ -16,6 +16,7 @@ type Globals struct {
 	GOTOLEG_URL           string
 	GOTOLEG_LOGIN         string
 	GOTOLEG_PASS          string
+	GOTOLEG_API_KEY       string
 }
 
 var GlobalConfig Globals
@@ -40,4 +41,5 @@ func InitGlobals() {
 	GlobalConfig.GOTOLEG_URL = os.Getenv("GOTOLEG_URL")
 	GlobalConfig.GOTOLEG_LOGIN = os.Getenv("GOTOLEG_LOGIN")
 	GlobalConfig.GOTOLEG_PASS = os.Getenv("GOTOLEG_PASS")
+	GlobalConfig.GOTOLEG_API_KEY = os.Getenv("GOTOLEG_API_KEY")
 }
