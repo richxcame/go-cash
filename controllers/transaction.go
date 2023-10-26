@@ -8,7 +8,6 @@ import (
 	"gocash/models"
 	"gocash/pkg/db"
 	"gocash/pkg/logger"
-	"io"
 	"net/http"
 	"strconv"
 
@@ -24,11 +23,12 @@ func Transaction(ctx *gin.Context) {
 			"error":   err,
 			"message": "invalid data",
 		})
+		return
 	}
 	var transaction models.SendMoney
-	query := `SELECT contact from cashes WHERE detail = $1`
+	query := `SELECT contact, SUM(amount) from cashes WHERE detail = $1 GROUP BY contact`
 	if err := db.DB.QueryRow(ctx, query, sendMoneyRequest.BookingNumber).
-		Scan(&transaction.Phone); err != nil {
+		Scan(&transaction.Phone, &transaction.Amount); err != nil {
 		logger.Errorf("booking number search error %v", err)
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error":   err,
@@ -37,10 +37,16 @@ func Transaction(ctx *gin.Context) {
 		return
 	}
 
+	ctx.AddParam("booking-number", sendMoneyRequest.BookingNumber)
+	resp := CheckBookingFromApi(ctx)
+	if resp.Success {
+		amountFloat, _ := strconv.ParseFloat(transaction.Amount, 64)
+		transaction.Amount = strconv.FormatFloat(amountFloat-resp.Data.Booking.TotalPrice, 'f', 2, 64)
+	}
 	transaction.Note = sendMoneyRequest.BookingNumber
-	transaction.APIKey = config.GlobalConfig.GOTOLEG_API_KEY
+	transaction.ApiKey = config.GlobalConfig.GOTOLEG_API_KEY
 	transaction.Service = ""
-	transaction.Amount = strconv.Itoa(sendMoneyRequest.Amount)
+	fmt.Println(transaction)
 
 	payload, err := json.Marshal(transaction)
 	if err != nil {
@@ -67,7 +73,7 @@ func Transaction(ctx *gin.Context) {
 }
 
 func sendRequest(payload []byte) error {
-	req, err := http.NewRequest("POST", config.GlobalConfig.GOTOLEG_URL+"trnxs", bytes.NewBuffer(payload))
+	req, err := http.NewRequest("POST", config.GlobalConfig.GOTOLEG_URL+"trxns", bytes.NewBuffer(payload))
 	if err != nil {
 		fmt.Println("Error creating request:", err)
 		return err
@@ -84,11 +90,6 @@ func sendRequest(payload []byte) error {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("request failed with status: %s", resp.Status)
-	}
-
-	_, err = io.ReadAll(resp.Body)
-	if err != nil {
-		return err
 	}
 
 	return nil

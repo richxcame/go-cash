@@ -15,12 +15,29 @@ import (
 
 func CheckBookingNumber(ctx *gin.Context) {
 	var response models.CheckBookingResponse
-	bookingResponse := checkBookingFromApi(ctx, &response)
-	checkIsMoneySent(&response, bookingResponse)
+	bookingResponse := CheckBookingFromApi(ctx)
+
+	if !bookingResponse.Success {
+		response.Booking.Message = "not found"
+		response.Booking.Success = false
+	}
+	response.Booking.Message = "found"
+	response.Booking.Success = true
+
+	if err := checkIsMoneySent(bookingResponse); err != nil {
+		response.Transaction.Message = err.Error()
+		response.Transaction.Success = false
+		ctx.JSON(200, response)
+		return
+	}
+
+	response.Transaction.Message = "success"
+	response.Transaction.Success = true
+
 	ctx.JSON(200, response)
 }
 
-func checkBookingFromApi(ctx *gin.Context, checkBooking *models.CheckBookingResponse) models.BookingsResponse {
+func CheckBookingFromApi(ctx *gin.Context) models.BookingsResponse {
 	var bookingsResponse models.BookingsResponse
 
 	ticketNumber := ctx.Param("booking-number")
@@ -44,32 +61,20 @@ func checkBookingFromApi(ctx *gin.Context, checkBooking *models.CheckBookingResp
 		return models.BookingsResponse{}
 	}
 
-	if !bookingsResponse.Success {
-		checkBooking.Booking.Message = "not found"
-		checkBooking.Booking.Success = false
-		return models.BookingsResponse{}
-	}
-
-	checkBooking.Booking.Message = "found"
-	checkBooking.Booking.Success = true
 	return bookingsResponse
 }
 
-func checkIsMoneySent(checkBooking *models.CheckBookingResponse, bookingResponse models.BookingsResponse) {
+func checkIsMoneySent(bookingResponse models.BookingsResponse) error {
 	token, err := LoginToGotoleg()
 	if err != nil {
-		checkBooking.Transaction.Message = err.Error()
-		checkBooking.Transaction.Success = false
-		return
+		return err
 	}
 	err = checkTransaction(token, bookingResponse)
 	if err != nil {
-		checkBooking.Transaction.Message = err.Error()
-		checkBooking.Transaction.Success = false
-		return
+		return err
 	}
-	checkBooking.Transaction.Message = "success"
-	checkBooking.Transaction.Success = true
+
+	return nil
 }
 
 func checkTransaction(token models.GotolegToken, bookingResponse models.BookingsResponse) error {
