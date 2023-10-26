@@ -46,7 +46,6 @@ func Transaction(ctx *gin.Context) {
 	transaction.Note = sendMoneyRequest.BookingNumber
 	transaction.ApiKey = config.GlobalConfig.GOTOLEG_API_KEY
 	transaction.Service = ""
-	fmt.Println(transaction)
 
 	payload, err := json.Marshal(transaction)
 	if err != nil {
