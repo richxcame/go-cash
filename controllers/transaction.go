@@ -8,6 +8,7 @@ import (
 	"gocash/models"
 	"gocash/pkg/db"
 	"gocash/pkg/logger"
+	"math"
 	"net/http"
 	"strconv"
 
@@ -41,7 +42,7 @@ func Transaction(ctx *gin.Context) {
 	resp := CheckBookingFromApi(ctx)
 	if resp.Success {
 		amountFloat, _ := strconv.ParseFloat(transaction.Amount, 64)
-		transaction.Amount = strconv.FormatFloat(amountFloat-resp.Data.Booking.TotalPrice, 'f', 2, 64)
+		transaction.Amount = strconv.Itoa(int(math.Floor(amountFloat-resp.Data.Booking.TotalPrice) * 100))
 	}
 	transaction.Note = sendMoneyRequest.BookingNumber
 	transaction.ApiKey = config.GlobalConfig.GOTOLEG_API_KEY
