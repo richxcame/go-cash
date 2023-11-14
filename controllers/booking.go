@@ -20,9 +20,10 @@ func CheckBookingNumber(ctx *gin.Context) {
 	if !bookingResponse.Success {
 		response.Booking.Message = "not found"
 		response.Booking.Success = false
+	} else {
+		response.Booking.Message = "found"
+		response.Booking.Success = true
 	}
-	response.Booking.Message = "found"
-	response.Booking.Success = true
 
 	if err := checkIsMoneySent(bookingResponse); err != nil {
 		response.Transaction.Message = err.Error()
