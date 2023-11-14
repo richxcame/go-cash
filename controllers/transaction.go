@@ -13,6 +13,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 func Transaction(ctx *gin.Context) {
@@ -47,6 +48,7 @@ func Transaction(ctx *gin.Context) {
 	transaction.Note = sendMoneyRequest.BookingNumber
 	transaction.ApiKey = config.GlobalConfig.GOTOLEG_API_KEY
 	transaction.Service = ""
+	transaction.LocalID = uuid.New().String()
 
 	payload, err := json.Marshal(transaction)
 	if err != nil {
