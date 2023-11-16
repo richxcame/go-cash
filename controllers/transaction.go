@@ -39,8 +39,7 @@ func Transaction(ctx *gin.Context) {
 		return
 	}
 
-	ctx.AddParam("booking-number", sendMoneyRequest.BookingNumber)
-	resp := CheckBookingFromApi(ctx)
+	resp := CheckBookingFromApi(sendMoneyRequest.BookingNumber)
 	if resp.Success {
 		amountFloat, _ := strconv.ParseFloat(transaction.Amount, 64)
 		transaction.Amount = strconv.Itoa(int(math.Floor((amountFloat - resp.Data.Booking.TotalPrice) * 100)))

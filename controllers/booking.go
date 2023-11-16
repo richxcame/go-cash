@@ -15,7 +15,8 @@ import (
 
 func CheckBookingNumber(ctx *gin.Context) {
 	var response models.CheckBookingResponse
-	bookingResponse := CheckBookingFromApi(ctx)
+	bookingNumber := ctx.Param("booking-number")
+	bookingResponse := CheckBookingFromApi(bookingNumber)
 
 	if !bookingResponse.Success {
 		response.Booking.Message = "not found"
@@ -25,7 +26,7 @@ func CheckBookingNumber(ctx *gin.Context) {
 		response.Booking.Success = true
 	}
 
-	if err := checkIsMoneySent(bookingResponse); err != nil {
+	if err := checkIsMoneySent(bookingNumber); err != nil {
 		response.Transaction.Message = err.Error()
 		response.Transaction.Success = false
 		ctx.JSON(200, response)
@@ -38,39 +39,35 @@ func CheckBookingNumber(ctx *gin.Context) {
 	ctx.JSON(200, response)
 }
 
-func CheckBookingFromApi(ctx *gin.Context) models.BookingsResponse {
+func CheckBookingFromApi(bookingNumber string) models.BookingsResponse {
 	var bookingsResponse models.BookingsResponse
 
-	ticketNumber := ctx.Param("booking-number")
-	url := config.GlobalConfig.BOOKINGS_API_URL + ticketNumber
+	url := config.GlobalConfig.BOOKINGS_API_URL + bookingNumber
 
 	response, err := http.Get(url)
 	if err != nil {
-		ctx.JSON(400, err.Error())
 		return models.BookingsResponse{}
 	}
 	defer response.Body.Close()
 
 	responseBody, err := io.ReadAll(response.Body)
 	if err != nil {
-		ctx.JSON(400, err.Error())
 		return models.BookingsResponse{}
 	}
 
 	if err := json.Unmarshal(responseBody, &bookingsResponse); err != nil {
-		ctx.JSON(400, err.Error())
 		return models.BookingsResponse{}
 	}
 
 	return bookingsResponse
 }
 
-func checkIsMoneySent(bookingResponse models.BookingsResponse) error {
+func checkIsMoneySent(bookingNumber string) error {
 	token, err := LoginToGotoleg()
 	if err != nil {
 		return err
 	}
-	err = checkTransaction(token, bookingResponse)
+	err = checkTransaction(token, bookingNumber)
 	if err != nil {
 		return err
 	}
@@ -78,12 +75,12 @@ func checkIsMoneySent(bookingResponse models.BookingsResponse) error {
 	return nil
 }
 
-func checkTransaction(token models.GotolegToken, bookingResponse models.BookingsResponse) error {
+func checkTransaction(token models.GotolegToken, bookingNumber string) error {
 	var transactionsResponse models.GotolegResponseTransactions
 	client := &http.Client{}
 
 	// Create a new GET request
-	req, err := http.NewRequest("GET", config.GlobalConfig.GOTOLEG_URL+"transactions?note="+bookingResponse.Data.Booking.BookingNumber, nil)
+	req, err := http.NewRequest("GET", config.GlobalConfig.GOTOLEG_URL+"transactions?note="+bookingNumber, nil)
 	if err != nil {
 
 		return err
@@ -112,6 +109,7 @@ func checkTransaction(token models.GotolegToken, bookingResponse models.Bookings
 		return err
 	}
 
+	fmt.Println(transactionsResponse)
 	if len(transactionsResponse.Transactions) == 0 {
 		return errors.New("not found")
 	}
