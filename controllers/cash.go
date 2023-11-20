@@ -132,7 +132,10 @@ func GetCashes(ctx *gin.Context) {
 	}
 
 	totalCashes := 0
-	err = db.DB.QueryRow(context.Background(), "SELECT COUNT(*) FROM cashes"+sqlFilters, values...).Scan(&totalCashes)
+	query := "SELECT COUNT(*) FROM (SELECT DISTINCT detail FROM cashes" + sqlFilters + " GROUP BY contact, detail) AS subquery;"
+
+	err = db.DB.QueryRow(context.Background(), query, values...).Scan(&totalCashes)
+
 	if err != nil {
 		logger.Errorf("cash count error %v", err)
 		ctx.JSON(http.StatusInternalServerError, gin.H{
