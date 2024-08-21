@@ -1,4 +1,4 @@
-package controllers
+package cash
 
 import (
 	"context"
@@ -32,7 +32,7 @@ func CreateCashController(ctx *gin.Context) {
 
 	// Find the client with the given key
 	var client string
-	err := db.DB.QueryRow(context.Background(), "SELECT name FROM clients WHERE api_key = $1", body.APIKey).Scan(&client)
+	err := db.DB.QueryRow(context.Background(), slClsSql, body.APIKey).Scan(&client)
 	if err != nil {
 		logger.Errorf("api key search error %v", err)
 		ctx.JSON(http.StatusInternalServerError, gin.H{
@@ -44,11 +44,7 @@ func CreateCashController(ctx *gin.Context) {
 
 	// Insert request to database
 	_uuid := uuid.New().String()
-	sqlStatement := `
-INSERT INTO cashes (uuid, created_at, updated_at, client, contact, amount, detail, note)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-`
-	_, err = db.DB.Exec(context.Background(), sqlStatement, _uuid, time.Now(), time.Now(), client, body.Contact, body.Amount, body.Detail, body.Note)
+	_, err = db.DB.Exec(context.Background(), insCshSql, _uuid, time.Now(), time.Now(), client, body.Contact, body.Amount, body.Detail, body.Note)
 	if err != nil {
 		logger.Errorf("database save error %v", err)
 		ctx.JSON(http.StatusInternalServerError, gin.H{
@@ -96,16 +92,15 @@ func GetCashes(ctx *gin.Context) {
 	}
 	valuesWithPagination := append(values, offset, limit)
 
-	sqlStatement := `SELECT c.contact, c.detail, SUM(c.amount), MAX(created_at) FROM cashes c`
 	sqlFilters := ""
 	if len(queries) > 0 {
 		sqlFilters += " WHERE "
 		sqlFilters += strings.Join(queries, " AND ")
 	}
-	sqlStatement += sqlFilters
-	sqlStatement += " GROUP BY c.contact, c.detail ORDER BY MAX(created_at) DESC "
-	sqlStatement += fmt.Sprintf(" offset $%v limit $%v", index+1, index+2)
-	rows, err := db.DB.Query(context.Background(), sqlStatement, valuesWithPagination...)
+	slSumCshsSql += sqlFilters
+	slSumCshsSql += " GROUP BY c.contact, c.detail ORDER BY MAX(created_at) DESC "
+	slSumCshsSql += fmt.Sprintf(" offset $%v limit $%v", index+1, index+2)
+	rows, err := db.DB.Query(context.Background(), slSumCshsSql, valuesWithPagination...)
 	if err != nil {
 		logger.Error(err)
 		ctx.JSON(http.StatusInternalServerError, gin.H{
@@ -132,7 +127,7 @@ func GetCashes(ctx *gin.Context) {
 	}
 
 	totalCashes := 0
-	query := "SELECT COUNT(*) FROM (SELECT DISTINCT detail FROM cashes" + sqlFilters + " GROUP BY contact, detail) AS subquery;"
+	query := slCntCshsSql + sqlFilters + " GROUP BY contact, detail) AS subquery;"
 
 	err = db.DB.QueryRow(context.Background(), query, values...).Scan(&totalCashes)
 
@@ -164,7 +159,7 @@ func CashesByBooking(ctx *gin.Context) {
 
 	// Find the cash with given Booking Number
 	cashes := make([]models.CashBodyResponseBooking, 0)
-	rows, err := db.DB.Query(context.Background(), "SELECT uuid, created_at, client, contact, amount, detail, note FROM cashes where detail = $1", bookingNumber)
+	rows, err := db.DB.Query(context.Background(), slCshsSql, bookingNumber)
 	if err != nil {
 		logger.Error(err)
 		ctx.JSON(http.StatusNotFound, gin.H{
@@ -190,4 +185,40 @@ func CashesByBooking(ctx *gin.Context) {
 	ctx.JSON(200, gin.H{
 		"cashes": cashes,
 	})
+}
+
+func GetDatesCashes(c *gin.Context) {
+	ctx := c.Request.Context()
+	date1, date2 := getMonth()
+	date1 = c.DefaultQuery("date1", date1)
+	date2 = c.DefaultQuery("date2", date2)
+
+	data, msg, err := GetDatesCashesService(&ctx, date1, date2)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   err.Error(),
+			"message": msg,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, data)
+
+}
+
+func getMonth() (string, string) {
+	now := time.Now()
+
+	// Get the first day of the current month
+	firstDayOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+
+	// Get the first day of the next month
+	firstDayNextMonth := time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, now.Location())
+
+	// Format the dates as YYYY-MM-DD
+	firstDayString := firstDayOfMonth.Format("2006-01-02")
+	lastDayString := firstDayNextMonth.Format("2006-01-02")
+
+	return firstDayString, lastDayString
 }

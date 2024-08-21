@@ -1,4 +1,4 @@
-package controllers
+package auth
 
 import (
 	"context"
@@ -29,7 +29,7 @@ func Login(ctx *gin.Context) {
 
 	// Find the user with given data from database
 	var dUser models.User
-	err := db.DB.QueryRow(context.Background(), "select username, password from users where username = $1", user.Username).Scan(&dUser.Username, &dUser.Password)
+	err := db.DB.QueryRow(context.Background(), sUserSql, user.Username).Scan(&dUser.Username, &dUser.Password)
 	if err != nil {
 		logger.Error(err)
 		ctx.JSON(http.StatusBadRequest, gin.H{

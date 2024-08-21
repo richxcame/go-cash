@@ -9,6 +9,7 @@ import (
 )
 
 var DB *pgxpool.Pool
+var GoToleg *pgxpool.Pool
 
 func CreateDB() {
 	dbpool, err := pgxpool.New(context.Background(), os.Getenv("DATABASE_URL"))
@@ -20,4 +21,15 @@ func CreateDB() {
 	}
 
 	DB = dbpool
+
+	dbpool, err = pgxpool.New(context.Background(), os.Getenv("GOTOLEG_DATABASE_URL"))
+	if err != nil {
+		logger.Fatalf("Failed to create new gotolegdb pool %v", err)
+	}
+	if err := dbpool.Ping(context.Background()); err != nil {
+		logger.Fatalf("Couldn't connect to gotoleg database %v", err)
+	}
+
+	GoToleg = dbpool
+
 }

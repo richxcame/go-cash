@@ -1,4 +1,4 @@
-package controllers
+package transaction
 
 import (
 	"bytes"
@@ -8,6 +8,7 @@ import (
 	"gocash/models"
 	"gocash/pkg/db"
 	"gocash/pkg/logger"
+	"gocash/src/booking"
 	"math"
 	"net/http"
 	"strconv"
@@ -28,8 +29,7 @@ func Transaction(ctx *gin.Context) {
 		return
 	}
 	var transaction models.SendMoney
-	query := `SELECT contact, SUM(amount) from cashes WHERE detail = $1 GROUP BY contact`
-	if err := db.DB.QueryRow(ctx, query, sendMoneyRequest.BookingNumber).
+	if err := db.DB.QueryRow(ctx, slContSumCshsSql, sendMoneyRequest.BookingNumber).
 		Scan(&transaction.Phone, &transaction.Amount); err != nil {
 		logger.Errorf("booking number search error %v", err)
 		ctx.JSON(http.StatusInternalServerError, gin.H{
@@ -39,7 +39,7 @@ func Transaction(ctx *gin.Context) {
 		return
 	}
 
-	resp := CheckBookingFromApi(sendMoneyRequest.BookingNumber)
+	resp := booking.CheckBookingFromApi(sendMoneyRequest.BookingNumber)
 	if resp.Success {
 		amountFloat, _ := strconv.ParseFloat(transaction.Amount, 64)
 		transaction.Amount = strconv.Itoa(int(math.Floor((amountFloat - resp.Data.Booking.TotalPrice) * 100)))
