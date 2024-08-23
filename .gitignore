@@ -4,3 +4,4 @@ clients.json
 **/logs
 **/bin
 /sql
+/docs

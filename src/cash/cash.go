@@ -1,7 +1,6 @@
 package cash
 
 import (
-	"context"
 	"fmt"
 	"gocash/models"
 	"gocash/pkg/db"
@@ -18,12 +17,13 @@ import (
 	"github.com/google/uuid"
 )
 
-func CreateCashController(ctx *gin.Context) {
+func CreateCashController(c *gin.Context) {
+	ctx := c.Request.Context()
 	// Get request body
 	var body models.CashBody
-	if err := ctx.BindJSON(&body); err != nil {
+	if err := c.BindJSON(&body); err != nil {
 		logger.Errorf("request body wrong %v", err)
-		ctx.JSON(400, gin.H{
+		c.JSON(400, gin.H{
 			"error":   err.Error(),
 			"message": "Request body invalid",
 		})
@@ -32,10 +32,10 @@ func CreateCashController(ctx *gin.Context) {
 
 	// Find the client with the given key
 	var client string
-	err := db.DB.QueryRow(context.Background(), slClsSql, body.APIKey).Scan(&client)
+	err := db.DB.QueryRow(ctx, sClientsQ, body.APIKey).Scan(&client)
 	if err != nil {
 		logger.Errorf("api key search error %v", err)
-		ctx.JSON(http.StatusInternalServerError, gin.H{
+		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   err,
 			"message": "Client hasn't been found",
 		})
@@ -44,10 +44,10 @@ func CreateCashController(ctx *gin.Context) {
 
 	// Insert request to database
 	_uuid := uuid.New().String()
-	_, err = db.DB.Exec(context.Background(), insCshSql, _uuid, time.Now(), time.Now(), client, body.Contact, body.Amount, body.Detail, body.Note)
+	_, err = db.DB.Exec(ctx, iCashQ, _uuid, time.Now(), time.Now(), client, body.Contact, body.Amount, body.Detail, body.Note)
 	if err != nil {
 		logger.Errorf("database save error %v", err)
-		ctx.JSON(http.StatusInternalServerError, gin.H{
+		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   err,
 			"message": "Couldn't save into cashes",
 		})
@@ -55,16 +55,17 @@ func CreateCashController(ctx *gin.Context) {
 	}
 
 	// Send success result
-	ctx.JSON(201, gin.H{
+	c.JSON(201, gin.H{
 		"message": "Successfully saved into database",
 		"uuid":    _uuid,
 	})
 }
 
-func GetCashes(ctx *gin.Context) {
-	offset, limit := utils.Paginate(ctx)
+func GetCashes(c *gin.Context) {
+	ctx := c.Request.Context()
+	offset, limit := utils.Paginate(c)
 
-	urlQueries := ctx.Request.URL.Query()
+	urlQueries := c.Request.URL.Query()
 	index := 0
 	var values []interface{}
 	var queries []string
@@ -92,18 +93,18 @@ func GetCashes(ctx *gin.Context) {
 	}
 	valuesWithPagination := append(values, offset, limit)
 
-	sqlFilters := ""
+	QFilters := ""
 	if len(queries) > 0 {
-		sqlFilters += " WHERE "
-		sqlFilters += strings.Join(queries, " AND ")
+		QFilters += " WHERE "
+		QFilters += strings.Join(queries, " AND ")
 	}
-	slSumCshsSql += sqlFilters
-	slSumCshsSql += " GROUP BY c.contact, c.detail ORDER BY MAX(created_at) DESC "
-	slSumCshsSql += fmt.Sprintf(" offset $%v limit $%v", index+1, index+2)
-	rows, err := db.DB.Query(context.Background(), slSumCshsSql, valuesWithPagination...)
+	sSumCashesQ += QFilters
+	sSumCashesQ += " GROUP BY c.contact, c.detail ORDER BY MAX(created_at) DESC "
+	sSumCashesQ += fmt.Sprintf(" offset $%v limit $%v", index+1, index+2)
+	rows, err := db.DB.Query(ctx, sSumCashesQ, valuesWithPagination...)
 	if err != nil {
 		logger.Error(err)
-		ctx.JSON(http.StatusInternalServerError, gin.H{
+		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   err.Error(),
 			"message": "Couldn't search from cashes",
 		})
@@ -117,7 +118,7 @@ func GetCashes(ctx *gin.Context) {
 		err := rows.Scan(&cash.Contact, &cash.Detail, &cash.Amount, &cash.CreatedAt)
 		if err != nil {
 			logger.Errorf("Scan error %v", err)
-			ctx.JSON(http.StatusInternalServerError, gin.H{
+			c.JSON(http.StatusInternalServerError, gin.H{
 				"error":   err,
 				"message": "Scan error",
 			})
@@ -127,30 +128,31 @@ func GetCashes(ctx *gin.Context) {
 	}
 
 	totalCashes := 0
-	query := slCntCshsSql + sqlFilters + " GROUP BY contact, detail) AS subquery;"
+	query := sCountCashesQ + QFilters + " GROUP BY contact, detail) AS subquery;"
 
-	err = db.DB.QueryRow(context.Background(), query, values...).Scan(&totalCashes)
+	err = db.DB.QueryRow(ctx, query, values...).Scan(&totalCashes)
 
 	if err != nil {
 		logger.Errorf("cash count error %v", err)
-		ctx.JSON(http.StatusInternalServerError, gin.H{
+		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   err.Error(),
 			"message": "Couldn't count total number of transactions",
 		})
 		return
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{
+	c.JSON(http.StatusOK, gin.H{
 		"cashes": cashes,
 		"total":  totalCashes,
 	})
 }
 
-func CashesByBooking(ctx *gin.Context) {
+func CashesByBooking(c *gin.Context) {
+	ctx := c.Request.Context()
 	// Get Booking Number from URL param
-	bookingNumber, ok := ctx.Params.Get("booking-number")
+	bookingNumber, ok := c.Params.Get("booking-number")
 	if !ok {
-		ctx.JSON(http.StatusBadRequest, gin.H{
+		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "Booking Number is required",
 			"message": "Coulnd't find Booking Number",
 		})
@@ -159,10 +161,10 @@ func CashesByBooking(ctx *gin.Context) {
 
 	// Find the cash with given Booking Number
 	cashes := make([]models.CashBodyResponseBooking, 0)
-	rows, err := db.DB.Query(context.Background(), slCshsSql, bookingNumber)
+	rows, err := db.DB.Query(ctx, sCashesQ, bookingNumber)
 	if err != nil {
 		logger.Error(err)
-		ctx.JSON(http.StatusNotFound, gin.H{
+		c.JSON(http.StatusNotFound, gin.H{
 			"error":   err.Error(),
 			"message": "Couldn't find the cash details",
 		})
@@ -174,7 +176,7 @@ func CashesByBooking(ctx *gin.Context) {
 		err := rows.Scan(&cash.UUID, &cash.CreatedAt, &cash.Client, &cash.Contact, &cash.Amount, &cash.Detail, &cash.Note)
 		if err != nil {
 			logger.Errorf("Scan error %v", err)
-			ctx.JSON(http.StatusInternalServerError, gin.H{
+			c.JSON(http.StatusInternalServerError, gin.H{
 				"error":   err,
 				"message": "Scan error",
 			})
@@ -182,7 +184,7 @@ func CashesByBooking(ctx *gin.Context) {
 		}
 		cashes = append(cashes, cash)
 	}
-	ctx.JSON(200, gin.H{
+	c.JSON(200, gin.H{
 		"cashes": cashes,
 	})
 }

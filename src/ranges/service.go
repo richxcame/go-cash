@@ -7,14 +7,35 @@ import (
 	"gocash/pkg/logger"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
 
-func GetRangesService(offset, limit int) ([]models.RangeBodyResponse, int, string, string) {
+func CreateRangesService(ctx context.Context, body models.RangeBody) (string, string, error) {
+
+	// Find the client with the given key
+	var client string
+	err := db.DB.QueryRow(ctx, sClientsQ, body.APIKey).Scan(&client)
+	if err != nil {
+		logger.Errorf("api key search error %v", err)
+		return "", "Client hasn't been found", err
+	}
+
+	// Insert request to database
+	_uuid := uuid.New().String()
+	_, err = db.DB.Exec(ctx, iRangesQ, _uuid, time.Now(), time.Now(), client, body.Detail, body.Note)
+	if err != nil {
+		logger.Errorf("database save error %v", err)
+		return "", "Couldn't save into cashes", err
+	}
+	return _uuid, "Successfully saved into database", nil
+}
+
+func GetRangesService(ctx context.Context, offset, limit int) ([]models.RangeBodyResponse, int, string, string) {
 
 	// Find ranges
 	var rangeBodies []models.RangeBodyResponse
-	rows, err := db.DB.Query(context.Background(), slRngsByLntSql, offset, limit)
+	rows, err := db.DB.Query(ctx, sRangesByLimQ, offset, limit)
 	if err != nil {
 		return nil, 0, err.Error(), "Something went wrong"
 	}
@@ -32,7 +53,7 @@ func GetRangesService(offset, limit int) ([]models.RangeBodyResponse, int, strin
 	resultRanges := make([]models.RangeBodyResponse, 0)
 	for _, v := range rangeBodies {
 		var rangeBody models.RangeBodyResponse
-		err := db.DB.QueryRow(context.Background(), slRngByClntSql, v.CreatedAt, v.Client).Scan(&rangeBody.CreatedAt, &rangeBody.Client)
+		err := db.DB.QueryRow(ctx, sRangeByClientQ, v.CreatedAt, v.Client).Scan(&rangeBody.CreatedAt, &rangeBody.Client)
 		if err != nil && err != pgx.ErrNoRows {
 			return nil, 0, err.Error(), "Couldn't find searching range"
 		} else if err == pgx.ErrNoRows {
@@ -41,7 +62,7 @@ func GetRangesService(offset, limit int) ([]models.RangeBodyResponse, int, strin
 
 		// Search sum of cashes between the two ranges
 		var totalAmount *float64
-		err = db.DB.QueryRow(context.Background(), slSumCshsByClntSql, rangeBody.CreatedAt, v.CreatedAt, v.Client).Scan(&totalAmount)
+		err = db.DB.QueryRow(ctx, sSumCashesByClientQ, rangeBody.CreatedAt, v.CreatedAt, v.Client).Scan(&totalAmount)
 		if err != nil {
 			return nil, 0, err.Error(), "Couldn't find total amount of the range"
 		}
@@ -54,7 +75,7 @@ func GetRangesService(offset, limit int) ([]models.RangeBodyResponse, int, strin
 		var currencies models.Currencies
 		for _, vCurrency := range []uint{1, 5, 10, 20, 50, 100} {
 			var currency models.Currency
-			rowOne, err := db.DB.Query(context.Background(), slSumCshByGrpSql, rangeBody.CreatedAt, v.CreatedAt, v.Client, vCurrency)
+			rowOne, err := db.DB.Query(ctx, sSumCashByGroupQ, rangeBody.CreatedAt, v.CreatedAt, v.Client, vCurrency)
 			if err != nil {
 				return nil, 0, err.Error(), "Couldn't find total amount of the range"
 			}
@@ -98,10 +119,10 @@ func GetRangesService(offset, limit int) ([]models.RangeBodyResponse, int, strin
 
 	// Find total count of ranges
 	totalRanges := 0
-	err = db.DB.QueryRow(context.Background(), slAllRngsSql).Scan(&totalRanges)
+	err = db.DB.QueryRow(ctx, sCountRangesQ).Scan(&totalRanges)
 	if err != nil {
 		return nil, 0, err.Error(), "Couldn't find total number of ranges"
 	}
-	return rangeBodies, totalRanges, "", ""
+	return resultRanges, totalRanges, "", ""
 
 }

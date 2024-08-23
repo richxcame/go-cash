@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"context"
 	"gocash/config"
 	"gocash/middlewares"
 	"gocash/models"
@@ -15,12 +14,14 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func Login(ctx *gin.Context) {
+func Login(c *gin.Context) {
+	ctx := c.Request.Context()
+
 	// Get body from the request
 	var user models.User
-	if err := ctx.BindJSON(&user); err != nil {
+	if err := c.BindJSON(&user); err != nil {
 		logger.Error(err)
-		ctx.JSON(http.StatusBadRequest, gin.H{
+		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   err.Error(),
 			"message": "Couln't parse the request to user",
 		})
@@ -29,10 +30,10 @@ func Login(ctx *gin.Context) {
 
 	// Find the user with given data from database
 	var dUser models.User
-	err := db.DB.QueryRow(context.Background(), sUserSql, user.Username).Scan(&dUser.Username, &dUser.Password)
+	err := db.DB.QueryRow(ctx, sUserSql, user.Username).Scan(&dUser.Username, &dUser.Password)
 	if err != nil {
 		logger.Error(err)
-		ctx.JSON(http.StatusBadRequest, gin.H{
+		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   err.Error(),
 			"message": "Couldn't find user",
 		})
@@ -42,7 +43,7 @@ func Login(ctx *gin.Context) {
 	// Compare passwords
 	if err := bcrypt.CompareHashAndPassword([]byte(dUser.Password), []byte(user.Password)); err != nil {
 		logger.Error(err)
-		ctx.JSON(http.StatusBadRequest, gin.H{
+		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "wrong_password",
 			"message": "Invalid password",
 		})
@@ -53,7 +54,7 @@ func Login(ctx *gin.Context) {
 	tokens, err := middlewares.GenerateJWT(user.Username)
 	if err != nil {
 		logger.Error(err)
-		ctx.JSON(http.StatusInternalServerError, gin.H{
+		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   err.Error(),
 			"message": "Coulnd't create token",
 		})
@@ -61,7 +62,7 @@ func Login(ctx *gin.Context) {
 	}
 
 	// Send success response
-	ctx.JSON(http.StatusOK, gin.H{
+	c.JSON(http.StatusOK, gin.H{
 		"access_token":  tokens.AccessToken,
 		"refresh_token": tokens.RefreshToken,
 	})

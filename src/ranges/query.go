@@ -1,35 +1,35 @@
 package ranges
 
-var slClSql = `
+var sClientsQ = `
 	SELECT name FROM clients WHERE api_key = $1
 `
 
-var inRngsSql = `
+var iRangesQ = `
 	INSERT INTO ranges (uuid, created_at, updated_at, client, detail, note)
 		VALUES ($1, $2, $3, $4, $5, $6)
 `
 
-var slRngsByLntSql = `
+var sRangesByLimQ = `
 	SELECT r.uuid, r.created_at, r.updated_at, r.client, r.detail, r.note FROM ranges r ORDER BY r.created_at DESC OFFSET $1 LIMIT $2;
 `
 
-var slRngByClntSql = `
+var sRangeByClientQ = `
 	SELECT r.created_at, r.client FROM ranges r  WHERE created_at < $1 AND client=$2 ORDER BY created_at DESC limit 1
 `
 
-var slSumCshsByClntSql = `
+var sSumCashesByClientQ = `
 	SELECT SUM(amount) FROM cashes where created_at >= $1 AND created_at <= $2 AND client=$3
 `
 
-var slSumCshByGrpSql = `
+var sSumCashByGroupQ = `
 	SELECT SUM(amount),COUNT(amount) FROM cashes where created_at >= $1 AND created_at <= $2 AND client=$3 AND amount = $4 GROUP BY amount
 `
 
-var slAllRngsSql = `
+var sCountRangesQ = `
 	SELECT COUNT(*) FROM ranges
 `
 
-var slAllrngsSql2 = `
+var sAllRangesQ = `
 	
 WITH rp AS (
     SELECT 
