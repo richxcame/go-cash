@@ -34,6 +34,10 @@ func main() {
 		}
 	}()
 
+	// When a shutdown signal (like Ctrl+C) is caught, you initiate a graceful shutdown using srv.Shutdown(ctx), giving active connections time to complete before the server shuts down.
+	// Graceful shutdown is handled within the main function, allowing ongoing requests to finish processing before the server shuts down, if req not completed in 5 seconds the server will force shutdown.
+	//If the expected request finishes before 5 seconds, the server is shut down immediately.
+	// New Requests will not be accepted for 5 seconds.
 	// Wait for an interrupt signal to gracefully shutdown the server
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -41,7 +45,7 @@ func main() {
 	log.Println("Shutting down server...")
 
 	// Create a context with a timeout for the graceful shutdown
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	// Attempt to gracefully shutdown the server
