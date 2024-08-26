@@ -98,10 +98,12 @@ func GetCashes(c *gin.Context) {
 		QFilters += " WHERE "
 		QFilters += strings.Join(queries, " AND ")
 	}
-	sSumCashesQ += QFilters
-	sSumCashesQ += " GROUP BY c.contact, c.detail ORDER BY MAX(created_at) DESC "
-	sSumCashesQ += fmt.Sprintf(" offset $%v limit $%v", index+1, index+2)
-	rows, err := db.DB.Query(ctx, sSumCashesQ, valuesWithPagination...)
+	f := " "
+	f += QFilters
+	f += " GROUP BY c.contact, c.detail ORDER BY MAX(created_at) DESC "
+	f += fmt.Sprintf(" offset $%v limit $%v", index+1, index+2)
+
+	rows, err := db.DB.Query(ctx, sSumCashesQ+f, valuesWithPagination...)
 	if err != nil {
 		logger.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -131,7 +133,7 @@ func GetCashes(c *gin.Context) {
 	query := sCountCashesQ + QFilters + " GROUP BY contact, detail) AS subquery;"
 
 	err = db.DB.QueryRow(ctx, query, values...).Scan(&totalCashes)
-
+	fmt.Println(query)
 	if err != nil {
 		logger.Errorf("cash count error %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
